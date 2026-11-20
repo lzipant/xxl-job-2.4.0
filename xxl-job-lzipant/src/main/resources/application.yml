@@ -1,0 +1,18 @@
+server:
+  port: 8088
+
+logging:
+  config: classpath:logback.xml
+
+xxl:
+  job:
+    admin:
+      addresses: http://127.0.0.1:8080/xxl-job-admin
+    accessToken: default_token
+    executor:
+      appname: lzipant # 会被调度器保存为xxl_job_registry表的registry_key字段
+      address: http://10.0.0.100:9088 # 注意要加上协议
+      ip: 10.0.0.100
+      port: 9088
+      logretentiondays: 30
+      logpath: /Users/harrisonlee/Documents/projects/backend/xxl-job/xxl-job-2.4.0/log/xxl-job-lzipant.log

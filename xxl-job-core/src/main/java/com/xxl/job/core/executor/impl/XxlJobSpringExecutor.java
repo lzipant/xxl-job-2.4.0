@@ -1,0 +1,163 @@
+package com.xxl.job.core.executor.impl;
+
+import com.xxl.job.core.executor.XxlJobExecutor;
+import com.xxl.job.core.glue.GlueFactory;
+import com.xxl.job.core.handler.annotation.XxlJob;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.core.MethodIntrospector;
+import org.springframework.core.annotation.AnnotatedElementUtils;
+
+import java.lang.reflect.Method;
+import java.util.Map;
+
+
+/**
+ * xxl-job executor (for spring)
+ *
+ * @author xuxueli 2018-11-01 09:24:52
+ */
+public class XxlJobSpringExecutor extends XxlJobExecutor implements ApplicationContextAware, SmartInitializingSingleton, DisposableBean {
+    private static final Logger logger = LoggerFactory.getLogger(XxlJobSpringExecutor.class);
+
+
+    // SNIPPET_START afterSingletonsInstantiated
+    // start
+    @Override
+    public void afterSingletonsInstantiated() {
+
+        // init JobHandler Repository
+        /*initJobHandlerRepository(applicationContext);*/
+
+        // init JobHandler Repository (for method)
+        // 加载JobHandler并做处理
+        initJobHandlerMethodRepository(applicationContext);
+
+        // 加载Glue工厂实例
+        // refresh GlueFactory
+        GlueFactory.refreshInstance(1);
+
+        // super start
+        try {
+            // 进入XxlJobExecutor主启动流程
+            super.start();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    // SNIPPET_END afterSingletonsInstantiated
+
+    // destroy
+    @Override
+    public void destroy() {
+        super.destroy();
+    }
+
+
+    /*private void initJobHandlerRepository(ApplicationContext applicationContext) {
+        if (applicationContext == null) {
+            return;
+        }
+
+        // init job handler action
+        Map<String, Object> serviceBeanMap = applicationContext.getBeansWithAnnotation(JobHandler.class);
+
+        if (serviceBeanMap != null && serviceBeanMap.size() > 0) {
+            for (Object serviceBean : serviceBeanMap.values()) {
+                if (serviceBean instanceof IJobHandler) {
+                    String name = serviceBean.getClass().getAnnotation(JobHandler.class).value();
+                    IJobHandler handler = (IJobHandler) serviceBean;
+                    if (loadJobHandler(name) != null) {
+                        throw new RuntimeException("xxl-job jobhandler[" + name + "] naming conflicts.");
+                    }
+                    registJobHandler(name, handler);
+                }
+            }
+        }
+    }*/
+
+    // SNIPPET_START initJobHandlerMethodRepository
+    private void initJobHandlerMethodRepository(ApplicationContext applicationContext) {
+        if (applicationContext == null) {
+            return;
+        }
+        // init job handler from method
+        // 获取bean工厂中的所有bean
+        String[] beanDefinitionNames = applicationContext.getBeanNamesForType(Object.class, false, true);
+        // 遍历bean名称
+        for (String beanDefinitionName : beanDefinitionNames) {
+
+            // get bean
+            Object bean = null;
+            // 获取@Lazy注解
+            Lazy onBean = applicationContext.findAnnotationOnBean(beanDefinitionName, Lazy.class);
+            if (onBean!=null){ // 如果当前bean是懒加载的，则跳过
+                logger.debug("xxl-job annotation scan, skip @Lazy Bean:{}", beanDefinitionName);
+                continue;
+            }else { // 获取当前bean实例
+                bean = applicationContext.getBean(beanDefinitionName);
+            }
+
+            // filter method
+            Map<Method, XxlJob> annotatedMethods = null;   // referred to ：org.springframework.context.event.EventListenerMethodProcessor.processBean
+            try {
+                // 找bean类型中被@XxlJob注解修饰的方法
+                annotatedMethods = MethodIntrospector.selectMethods(bean.getClass(),
+                        new MethodIntrospector.MetadataLookup<XxlJob>() {
+                            @Override
+                            public XxlJob inspect(Method method) {
+                                // 获取方法上的@XxlJob注解信息
+                                return AnnotatedElementUtils.findMergedAnnotation(method, XxlJob.class);
+                            }
+                        });
+            } catch (Throwable ex) {
+                logger.error("xxl-job method-jobhandler resolve error for bean[" + beanDefinitionName + "].", ex);
+            }
+
+            // 不存在@XxlJob修饰的方法则跳过当前bean
+            if (annotatedMethods==null || annotatedMethods.isEmpty()) {
+                continue;
+            }
+
+            // generate and register method job handler
+            // 遍历类中被@XxlJob修饰的方法
+            for (Map.Entry<Method, XxlJob> methodXxlJobEntry : annotatedMethods.entrySet()) {
+                Method executeMethod = methodXxlJobEntry.getKey(); // 方法对象
+                XxlJob xxlJob = methodXxlJobEntry.getValue(); // @XxlJob注解对象
+                // register
+                // 注册job处理器
+                registJobHandler(xxlJob, bean, executeMethod);
+            }
+
+        }
+    }
+    // SNIPPET_END initJobHandlerMethodRepository
+
+    // ---------------------- applicationContext ----------------------
+    private static ApplicationContext applicationContext;
+
+    @Override
+    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+        XxlJobSpringExecutor.applicationContext = applicationContext;
+    }
+
+    public static ApplicationContext getApplicationContext() {
+        return applicationContext;
+    }
+
+    /*
+    BeanDefinitionRegistryPostProcessor
+    registry.getBeanDefine()
+    @Override
+    public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
+        this.registry = registry;
+    }
+    * */
+
+}

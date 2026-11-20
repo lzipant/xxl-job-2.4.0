@@ -1,0 +1,17 @@
+stages:
+  - code_snippet
+
+default:
+  image: python:3.12
+
+code_snippet:
+  stage: code_snippet
+  script:
+    - apt-get update && apt-get install -y git  # Install git if it's not included
+    # 只克隆最新的一次提交
+    - git clone --depth 1 https://gitlab.lzip.net/code-snippet/code-snippet-ci-script.git
+    # 进入脚本项目目录
+    - cd code-snippet-ci-script
+    - pip install -r requirements.txt
+    - export CODE_SNIPPET_REPO_PATH=${CI_PROJECT_DIR}
+    - python3 main.py  # Assuming script.py is the script to run
